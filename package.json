@@ -1,5 +1,5 @@
 {
-  "name": "auth-server-1",
+  "name": "in-auth",
   "version": "1.0.0",
   "description": "\ud074\ub77c\uc6b0\ub4dc \uc778\uc99d \uc11c\ubc84 (Render \ubc30\ud3ec\uc6a9)",
   "main": "server.js",
