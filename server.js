@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-// 프록시 뒤면 주석 해제
+// 프록시 뒤면 필요시 주석 해제
 // app.set('trust proxy', true);
 
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30분
@@ -28,7 +28,7 @@ function pruneExpired(email){
 
 app.get('/', (_, res) => res.send('🚀 인증 서버가 실행 중입니다.'));
 
-// 로그인: 다른 프로필이 활성 중이어도 **강제 인계(기존 세션 종료 후 대체)**
+// ✅ 로그인: 중복 로그인 차단 (기존 세션 유지, 새 로그인 거부)
 app.all('/auth', (req, res) => {
   const usersPath = path.join(__dirname, 'users.json');
   const users = JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
@@ -48,29 +48,21 @@ app.all('/auth', (req, res) => {
 
   pruneExpired(email);
   const cur = activeSessions.get(email);
-  let takeover = false;
-  let previous = null;
 
-  if (cur && (Date.now() - cur.last) <= SESSION_TTL_MS) {
-    if (cur.profileId !== profileId) {
-      // ✅ 강제 인계: 기존 세션 폐기 후 새 프로필로 교체
-      takeover = true;
-      previous = { profileId: cur.profileId, ip: cur.ip, last: cur.last };
-      console.log(`[강제인계] 🔁 ${time} | ${email} | 기존:${cur.profileId} → 새:${profileId} | IP:${ip}`);
-    } else {
-      console.log(`[재접속] 🟡 ${time} | ${email} | 프로필:${profileId} | IP:${ip}`);
-    }
-  } else {
-    console.log(`[신규로그인] 🟢 ${time} | ${email} | 프로필:${profileId} | IP:${ip}`);
+  // ✅ 이미 다른 프로필이 로그인 중이면 거부
+  if (cur && (Date.now() - cur.last) <= SESSION_TTL_MS && cur.profileId !== profileId) {
+    console.log(`[중복로그인 차단] ❌ ${time} | ${email} | 기존:${cur.profileId} → 시도:${profileId}`);
+    return res.json({ ok:false, msg:'이미 다른 세션에서 로그인 중입니다. 기존 로그아웃 후 시도하세요.' });
   }
 
+  // 통과: 신규 로그인 또는 같은 프로필의 재로그인
   const sessionId = 'sess_' + crypto.randomBytes(8).toString('hex');
   activeSessions.set(email, { profileId, sessionId, ip, last: Date.now() });
-
-  return res.json({ ok:true, msg: takeover ? '기존 프로필을 로그아웃하고 로그인했습니다' : '로그인 성공', sessionId, profileId, ttlMs: SESSION_TTL_MS, takeover, previous });
+  console.log(`[로그인] 🟢 ${time} | ${email} | 프로필:${profileId} | IP:${ip}`);
+  return res.json({ ok:true, sessionId, profileId, ttlMs: SESSION_TTL_MS });
 });
 
-// 세션 확인
+// ✅ 세션 확인
 app.get('/check', (req, res) => {
   const email = String(req.query.email || '').trim();
   const profileId = String(req.query.profileId || '').trim();
@@ -86,11 +78,10 @@ app.get('/check', (req, res) => {
     return res.json({ ok:false, expired:true });
   }
   const sameProfile = cur.profileId === profileId;
-  // 다른 프로필로 인계되었으면 즉시 실패 반환 → 클라이언트가 강제 로그아웃 처리
   return res.json({ ok: valid && sameProfile, sameProfile, sessionId: cur.sessionId, expiresInMs: SESSION_TTL_MS - (Date.now()-cur.last) });
 });
 
-// 하트비트(활동 연장)
+// ✅ 하트비트(활동 연장)
 app.post('/touch', (req, res) => {
   const { email, profileId } = req.body || {};
   if (!email || !profileId) return res.json({ ok:false, msg:'email, profileId 필요' });
@@ -101,7 +92,7 @@ app.post('/touch', (req, res) => {
   return res.json({ ok:true });
 });
 
-// 로그아웃(같은 프로필만 종료 허용)
+// ✅ 로그아웃(같은 프로필만 종료 허용)
 app.all('/logout', (req, res) => {
   const q = req.method === 'GET' ? req.query : req.body;
   const email = String(q.email || '').trim();
@@ -117,4 +108,4 @@ app.all('/logout', (req, res) => {
   return res.json({ ok:false, msg:'로그인 상태가 아니거나 다른 프로필' });
 });
 
-app.listen(PORT, () => console.log(`✅ 서버가 포트 ${PORT}에서 실행 중입니다`)); 
+app.listen(PORT, () => console.log(`✅ 서버가 포트 ${PORT}에서 실행 중입니다`));
