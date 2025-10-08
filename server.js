@@ -11,7 +11,7 @@ app.use(express.json());
 // 프록시 뒤면 필요시 주석 해제
 // app.set('trust proxy', true);
 
-const SESSION_TTL_MS = 60 * 60 * 1000; // 30분
+const SESSION_TTL_MS = 60 * 600 * 1000; // 30분
 // email -> { profileId, sessionId, ip, last }
 const activeSessions = new Map();
 
